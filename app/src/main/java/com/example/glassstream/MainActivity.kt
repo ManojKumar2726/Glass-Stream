@@ -6,7 +6,12 @@ import android.Manifest.permission.INTERNET
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -90,8 +95,45 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Stage 7 — audio OUTPUT. The glasses are a standard Bluetooth A2DP device, not a DAT capability;
+    // TextToSpeech plays through Android's audio system, which routes to the glasses when they're the
+    // connected media output.
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+
+    private fun speakToGlasses(text: String) {
+        val engine = tts
+        if (engine == null || !ttsReady) return
+        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "glassstream-tts")
+    }
+
+    /** Name of the connected Bluetooth audio output, if any — so routing to the glasses is verifiable. */
+    private fun bluetoothAudioOutputName(): String? {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            }
+            ?.productName
+            ?.toString()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.US
+                // USAGE_MEDIA → A2DP high-fidelity path, which is what routes to the glasses.
+                tts?.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                ttsReady = true
+            }
+        }
         enableEdgeToEdge()
         setContent {
             GlassstreamTheme {
@@ -108,6 +150,8 @@ class MainActivity : ComponentActivity() {
                         onStopStream = viewModel::stopStreaming,
                         onCapturePhoto = viewModel::capturePhoto,
                         onSetSurface = viewModel::setSurface,
+                        onSpeak = { speakToGlasses("Hello from GlassStream") },
+                        bluetoothOutput = bluetoothAudioOutputName(),
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -119,6 +163,13 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // Gate everything behind the required Android permissions.
         permissionLauncher.launch(PERMISSIONS)
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        super.onDestroy()
     }
 }
 
@@ -133,6 +184,8 @@ private fun ConnectionScreen(
     onStopStream: () -> Unit,
     onCapturePhoto: () -> Unit,
     onSetSurface: (android.view.Surface?) -> Unit,
+    onSpeak: () -> Unit,
+    bluetoothOutput: String?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -221,6 +274,15 @@ private fun ConnectionScreen(
                     .fillMaxWidth()
                     .height(240.dp),
             )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Stage 7 — audio output. Plays via Android TTS; routes to the glasses when they're the
+        // connected Bluetooth (A2DP) output. Independent of the DAT session.
+        Text("Bluetooth audio out: ${bluetoothOutput ?: "none detected"}")
+        Button(onClick = onSpeak) {
+            Text("Speak \"Hello from GlassStream\"")
         }
     }
 }

@@ -764,8 +764,8 @@ Current state (updated 2026-09-22):
 [x] Glasses connection (DeviceSession STARTED)
 [x] Camera        (photo capture + live video stream + on-screen HEVC preview)
 [x] Audio input   (glasses mic rides the camera stream; frames + live level meter)
-[ ] Audio output  ← NEXT
-[ ] Display
+[x] Audio output  (TTS via Bluetooth A2DP → glasses speakers)
+[ ] Display       ← NEXT
 ```
 
 The **next task is Stage 6 — Audio input**: prove that microphone audio from the
@@ -823,4 +823,11 @@ Follow-the-plan build, one capability at a time, each verified on real hardware
   frames and shows a live peak-level meter that responds to sound. Mic is optional — if
   the grant is denied the stream runs video-only.
 
-**Next:** Stage 7 — audio output (play audio through the glasses speakers).
+- **Stage 7 — Audio output** ✅ (confirmed on device)
+  Not a DAT capability — the glasses are a standard **Bluetooth A2DP** speaker. Uses
+  Android `TextToSpeech` (USAGE_MEDIA → A2DP) to speak "Hello from GlassStream", which
+  routes to the glasses when they're the connected media output. Independent of the DAT
+  session. UI also shows the detected Bluetooth output device. This sets up the later
+  ML→text→TTS→speakers path.
+
+**Next:** Stage 8 — display output (show text on the Ray-Ban Display via mwdat-display).
