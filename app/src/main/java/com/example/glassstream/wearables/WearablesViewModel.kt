@@ -12,6 +12,9 @@ import com.example.glassstream.stream.HevcDecoder
 import com.meta.wearable.dat.camera.Camera
 import com.meta.wearable.dat.camera.Stream
 import com.meta.wearable.dat.camera.addCamera
+import com.meta.wearable.dat.camera.types.AudioCodec
+import com.meta.wearable.dat.camera.types.AudioFrame
+import com.meta.wearable.dat.camera.types.AudioSampleRate
 import com.meta.wearable.dat.camera.types.PhotoData
 import com.meta.wearable.dat.camera.types.StreamConfiguration
 import com.meta.wearable.dat.camera.types.StreamState
@@ -24,6 +27,8 @@ import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
+import java.nio.ByteOrder
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +83,12 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
     @Volatile private var decoderSurface: Surface? = null
     // Latest HEVC config (VPS/SPS/PPS) so a decoder created after stream start can be primed.
     @Volatile private var configFrame: ByteArray? = null
+
+    // Stage 6: glasses microphone audio rides the same camera stream (PCM 16 kHz mono).
+    private var audioJob: Job? = null
+    private var audioFrameCounter = 0L
+    // Whether the wearable MICROPHONE permission was granted for this stream.
+    @Volatile private var audioEnabled = false
 
     /**
      * Initialize the DAT SDK and begin observing its state.
@@ -183,11 +194,11 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Stage 5: start the glasses camera stream and prove frames arrive.
+     * Stage 5 + 6: start the glasses stream. Video and the glasses microphone ride the SAME stream.
      *
-     * Requires an active session. The wearable CAMERA permission is checked first (a query with no
-     * redirect); if it isn't granted, [requestPermission] runs the real request, which redirects to
-     * the Meta AI app. On grant, the camera capability is attached and the stream started.
+     * Requires an active session. Checks the wearable CAMERA permission (required for the stream)
+     * and MICROPHONE permission (optional — if granted, audio rides along; if denied, video-only).
+     * A not-yet-granted permission triggers [requestPermission], which redirects to the Meta AI app.
      */
     fun startStreaming(requestPermission: suspend (Permission) -> PermissionStatus) {
         if (!_uiState.value.isSessionActive) {
@@ -196,30 +207,36 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
         }
         if (stream != null) return
         viewModelScope.launch {
-            val granted = ensureCameraPermission(requestPermission)
-            if (!granted) {
+            val cameraGranted = ensurePermission(Permission.CAMERA, requestPermission)
+            if (!cameraGranted) {
                 _uiState.update { it.copy(recentError = "Camera permission denied") }
                 return@launch
             }
+            // Microphone is optional; audio simply rides the camera stream when granted.
+            audioEnabled = ensurePermission(Permission.MICROPHONE, requestPermission)
             beginStream()
         }
     }
 
-    private suspend fun ensureCameraPermission(
+    private suspend fun ensurePermission(
+        permission: Permission,
         requestPermission: suspend (Permission) -> PermissionStatus,
     ): Boolean {
-        val current = Wearables.checkPermissionStatus(Permission.CAMERA)
+        val current = Wearables.checkPermissionStatus(permission)
             .getOrDefault(PermissionStatus.Denied)
         if (current == PermissionStatus.Granted) return true
-        return requestPermission(Permission.CAMERA) == PermissionStatus.Granted
+        return requestPermission(permission) == PermissionStatus.Granted
     }
 
     private fun beginStream() {
         val current = session ?: return
         if (stream != null) return
+        val withAudio = audioEnabled
         current
             .addCamera(
                 StreamConfiguration(
+                    // Glasses mic as PCM 16 kHz mono, riding the camera stream, when permitted.
+                    audioCodec = if (withAudio) AudioCodec.PCM(AudioSampleRate.RATE_16000, 1) else null,
                     videoQuality = VideoQuality.MEDIUM,
                     frameRate = FRAME_RATE,
                     compressVideo = true,
@@ -229,7 +246,16 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
                 camera = addedCamera
                 val added = addedCamera.stream
                 stream = added
-                _uiState.update { it.copy(frameCount = 0, lastFrameInfo = null) }
+                _uiState.update {
+                    it.copy(
+                        frameCount = 0,
+                        lastFrameInfo = null,
+                        audioEnabled = withAudio,
+                        audioFrameCount = 0,
+                        lastAudioInfo = null,
+                        audioLevel = 0f,
+                    )
+                }
                 // Subscribe before start() so no initial transitions/frames are missed.
                 setupStreamListeners(added)
                 _uiState.update { it.copy(streamState = StreamState.STARTING) }
@@ -316,6 +342,11 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
         videoJob = viewModelScope.launch(frameDispatcher) {
             stream.videoStream.collect { handleVideoFrame(it) }
         }
+        if (audioEnabled) {
+            audioJob = viewModelScope.launch(Dispatchers.Default) {
+                stream.audioStream.collect { handleAudioFrame(it) }
+            }
+        }
         streamStateJob = viewModelScope.launch {
             var hasBeenActive = false
             stream.state.collect { state ->
@@ -372,7 +403,38 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // Stage 6: prove glasses mic audio arrives. Frames are 16-bit PCM, mono, 16 kHz. We count them
+    // and compute a peak level (0..1) so the UI meter visibly moves when the wearer speaks.
+    private fun handleAudioFrame(frame: AudioFrame) {
+        val count = audioFrameCounter + 1
+        audioFrameCounter = count
+
+        val pcm = frame.buffer.duplicate().order(ByteOrder.nativeOrder()).asShortBuffer()
+        val sampleCount = pcm.remaining()
+        var peak = 0
+        while (pcm.hasRemaining()) {
+            val s = abs(pcm.get().toInt())
+            if (s > peak) peak = s
+        }
+        val level = peak / Short.MAX_VALUE.toFloat()
+
+        if (count == 1L) Log.d(TAG, "audio arriving: $sampleCount samples/frame, 16kHz mono PCM")
+        // Update ~a few times a second, not per frame, to avoid recomposition storms.
+        if (count == 1L || count % 5 == 0L) {
+            _uiState.update {
+                it.copy(
+                    audioFrameCount = count,
+                    audioLevel = level,
+                    lastAudioInfo = "$sampleCount samples, 16kHz mono PCM",
+                )
+            }
+        }
+    }
+
     private fun clearStreamResources() {
+        audioJob?.cancel()
+        audioJob = null
+        audioFrameCounter = 0
         videoJob?.cancel()
         videoJob = null
         streamStateJob?.cancel()
@@ -390,7 +452,9 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
         camera?.close()
         camera = null
         stream = null
-        _uiState.update { it.copy(streamState = StreamState.STOPPED) }
+        _uiState.update {
+            it.copy(streamState = StreamState.STOPPED, audioEnabled = false, audioLevel = 0f)
+        }
     }
 
     fun clearError() {

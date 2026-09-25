@@ -25,6 +25,11 @@ data class WearablesUiState(
     // Stage 5 (photo path): still capture, working around the firmware video-stream bug.
     val isCapturingPhoto: Boolean = false,
     val capturedPhoto: Bitmap? = null,
+    // Stage 6: glasses microphone audio (rides the camera stream).
+    val audioEnabled: Boolean = false,
+    val audioFrameCount: Long = 0,
+    val lastAudioInfo: String? = null,
+    val audioLevel: Float = 0f, // peak amplitude of the last frame, 0..1
     val recentError: String? = null,
 ) {
     val isRegistered: Boolean =

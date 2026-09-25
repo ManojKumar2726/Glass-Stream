@@ -763,7 +763,8 @@ Current state (updated 2026-09-22):
 [x] Developer Mode + on-glasses DAT app
 [x] Glasses connection (DeviceSession STARTED)
 [x] Camera        (photo capture + live video stream + on-screen HEVC preview)
-[ ] Audio         ← NEXT
+[x] Audio input   (glasses mic rides the camera stream; frames + live level meter)
+[ ] Audio output  ← NEXT
 [ ] Display
 ```
 
@@ -815,4 +816,11 @@ Follow-the-plan build, one capability at a time, each verified on real hardware
     129 + SDK 1.0.0**, then re-pushing developer-mode credentials in Meta AI and
     **re-registering** the app. The SDK dependency was bumped `0.9.0 → 1.0.0`.
 
-**Next:** Stage 6 — audio input (prove mic audio from the glasses reaches the app).
+- **Stage 6 — Audio input** ✅ (confirmed on device)
+  The glasses microphone rides the camera stream: `StreamConfiguration(audioCodec =
+  AudioCodec.PCM(RATE_16000, 1))` plus the wearable MICROPHONE permission, then collect
+  `stream.audioStream` (16-bit PCM, mono, 16 kHz `AudioFrame`s). The app counts audio
+  frames and shows a live peak-level meter that responds to sound. Mic is optional — if
+  the grant is denied the stream runs video-only.
+
+**Next:** Stage 7 — audio output (play audio through the glasses speakers).

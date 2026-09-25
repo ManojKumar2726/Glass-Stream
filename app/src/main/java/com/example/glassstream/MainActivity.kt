@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts.RequestMultiple
 import androidx.activity.viewModels
 import androidx.compose.foundation.AndroidExternalSurface
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -151,6 +153,12 @@ private fun ConnectionScreen(
         Text("Stream: ${state.streamState}")
         Text("Frames received: ${state.frameCount}")
         state.lastFrameInfo?.let { Text("Last frame: $it") }
+        Text("Audio (glasses mic): ${if (state.audioEnabled) "on" else "off"}")
+        if (state.audioEnabled) {
+            Text("Audio frames: ${state.audioFrameCount}")
+            state.lastAudioInfo?.let { Text("Last audio: $it") }
+            AudioLevelBar(level = state.audioLevel)
+        }
         state.recentError?.let { Text("Error: $it") }
 
         Spacer(Modifier.height(16.dp))
@@ -214,6 +222,25 @@ private fun ConnectionScreen(
                     .height(240.dp),
             )
         }
+    }
+}
+
+/** Simple horizontal meter: fills proportionally to the mic peak level (0..1). */
+@Composable
+private fun AudioLevelBar(level: Float) {
+    val clamped = level.coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(16.dp)
+            .background(Color(0xFF303030)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(clamped)
+                .height(16.dp)
+                .background(Color(0xFF4CAF50)),
+        )
     }
 }
 
