@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Stray Gradle distribution download; must never be committed
+/gradle-*-bin.zip

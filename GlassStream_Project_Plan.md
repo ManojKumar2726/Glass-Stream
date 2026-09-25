@@ -745,7 +745,7 @@ Follow this exact sequence:
 
 # 17. Immediate Next Task
 
-Current state:
+Current state (updated 2026-09-22):
 
 ```text
 [x] Meta account
@@ -757,41 +757,62 @@ Current state:
 [x] App signature
 [x] DAT dependencies
 
-[ ] AndroidManifest configuration   ← NEXT
-[ ] DAT initialization
-[ ] Registration
-[ ] Glasses connection
-[ ] Camera
-[ ] Audio
+[x] AndroidManifest configuration
+[x] DAT initialization
+[x] Registration
+[x] Developer Mode + on-glasses DAT app
+[x] Glasses connection (DeviceSession STARTED)
+[x] Camera        (photo capture + live video stream + on-screen HEVC preview)
+[ ] Audio         ← NEXT
 [ ] Display
 ```
 
-The **next task is to configure `AndroidManifest.xml` correctly**.
+The **next task is Stage 6 — Audio input**: prove that microphone audio from the
+glasses reaches the Android app.
 
-After that, build the smallest possible GlassStream application that:
+Do **not** introduce the ML model or audio processing beyond "audio data is
+arriving" until that basic input is confirmed working. Keep each stage isolated so
+failures point to a single layer (registration / permissions / device connection /
+camera / audio / display / application code) rather than everything at once.
 
-```text
-starts
-  ↓
-initializes DAT
-  ↓
-registers with Meta AI
-  ↓
-finds the glasses
-  ↓
-connects
-```
+---
 
-Do **not** introduce the camera, model, audio processing, or display UI until that connection layer is confirmed working.
+# 18. Progress Log
 
-This keeps each failure isolated. If something breaks, we can determine whether the problem is:
+Follow-the-plan build, one capability at a time, each verified on real hardware
+(Ray-Ban Display + Android phone). See the app code under
+`app/src/main/java/com/example/glassstream/` (`MainActivity`, `wearables/`).
 
-- Meta registration
-- Android permissions
-- device connection
-- camera streaming
-- audio
-- display
-- application code
+- **Stage 1 — AndroidManifest** ✅
+  Permissions (BLUETOOTH, BLUETOOTH_CONNECT, INTERNET, CAMERA), DAT metadata
+  `APPLICATION_ID`/`CLIENT_TOKEN` = `"0"` (Developer Mode — no real credentials needed),
+  and the Meta AI callback intent-filter (`glassstream://`). `minSdk` raised to 29
+  (required by `mwdat-camera`).
 
-rather than debugging everything simultaneously.
+- **Stage 2 — DAT init + Meta AI registration** ✅ (confirmed on device)
+  `Wearables.initialize` after Android permissions; observe `registrationState` and
+  discovered `devices`; Register/Unregister via the Meta AI app.
+
+- **Stage 3 — Developer Mode + on-glasses DAT app** ✅
+  Enabled Developer Mode in Meta AI and installed the on-glasses Device Access Toolkit
+  app. Note: the on-glasses install failed at 18% until the **glasses were restarted**,
+  after which it completed. (Prereqs: Meta AI ≥ v272, firmware ≥ v125, battery > 10%,
+  Wi-Fi on.)
+
+- **Stage 4 — DeviceSession** ✅ (confirmed on device)
+  `Wearables.createSession(AutoDeviceSelector())` → `session.start()`; session reaches
+  `STARTED`. Connection layer proven.
+
+- **Stage 5 — Camera** ✅ (fully done: photo + live video + on-screen preview)
+  - ✅ **Camera input proven**: `capturePhoto()` returns a real image, shown in the app.
+  - ✅ **Live video stream working**: `addCamera` + `videoStream` deliver frames
+    (~504x896 HEVC).
+  - ✅ **5b — live preview on screen**: ported Meta's software `HevcDecoder`
+    (`stream/HevcDecoder.kt`) which renders decoded frames straight to an
+    `AndroidExternalSurface`; the live camera feed shows on the phone.
+  - History: video was blocked ~Sept 8–24, 2026 by a **Ray-Ban Display firmware
+    regression** (v128), tracked in Meta issue #178. Fixed by updating to **firmware
+    129 + SDK 1.0.0**, then re-pushing developer-mode credentials in Meta AI and
+    **re-registering** the app. The SDK dependency was bumped `0.9.0 → 1.0.0`.
+
+**Next:** Stage 6 — audio input (prove mic audio from the glasses reaches the app).
