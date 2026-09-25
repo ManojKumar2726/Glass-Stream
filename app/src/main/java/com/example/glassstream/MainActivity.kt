@@ -152,6 +152,8 @@ class MainActivity : ComponentActivity() {
                         onSetSurface = viewModel::setSurface,
                         onSpeak = { speakToGlasses("Hello from GlassStream") },
                         bluetoothOutput = bluetoothAudioOutputName(),
+                        onShowDisplay = viewModel::showConnectedOnDisplay,
+                        onClearDisplay = viewModel::clearDisplay,
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -186,6 +188,8 @@ private fun ConnectionScreen(
     onSetSurface: (android.view.Surface?) -> Unit,
     onSpeak: () -> Unit,
     bluetoothOutput: String?,
+    onShowDisplay: () -> Unit,
+    onClearDisplay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -283,6 +287,18 @@ private fun ConnectionScreen(
         Text("Bluetooth audio out: ${bluetoothOutput ?: "none detected"}")
         Button(onClick = onSpeak) {
             Text("Speak \"Hello from GlassStream\"")
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Stage 8 — display output on the Ray-Ban Display (real DAT capability).
+        Text("Display: ${state.displayState ?: "not attached"}")
+        Text("Content sent: ${state.displayContentSent}")
+        Button(onClick = onShowDisplay, enabled = state.canUseDisplay) {
+            Text("Show \"CONNECTED\" on glasses display")
+        }
+        OutlinedButton(onClick = onClearDisplay, enabled = state.isDisplayAttached) {
+            Text("Clear display")
         }
     }
 }

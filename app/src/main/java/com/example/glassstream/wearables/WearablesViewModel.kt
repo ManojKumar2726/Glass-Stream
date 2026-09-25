@@ -27,6 +27,15 @@ import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
+import com.meta.wearable.dat.display.Display
+import com.meta.wearable.dat.display.addDisplay
+import com.meta.wearable.dat.display.removeDisplay
+import com.meta.wearable.dat.display.types.DisplayState
+import com.meta.wearable.dat.display.views.Alignment
+import com.meta.wearable.dat.display.views.Direction
+import com.meta.wearable.dat.display.views.FlexBoxBackground
+import com.meta.wearable.dat.display.views.TextColor
+import com.meta.wearable.dat.display.views.TextStyle
 import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +98,10 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
     private var audioFrameCounter = 0L
     // Whether the wearable MICROPHONE permission was granted for this stream.
     @Volatile private var audioEnabled = false
+
+    // Stage 8: the display capability (Ray-Ban Display) and its state observer.
+    private var display: Display? = null
+    private var displayStateJob: Job? = null
 
     /**
      * Initialize the DAT SDK and begin observing its state.
@@ -190,7 +203,81 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
         sessionStateJob = null
         sessionErrorJob?.cancel()
         sessionErrorJob = null
+        cleanupDisplay()
         session = null
+    }
+
+    /**
+     * Stage 8: attach the Ray-Ban Display and show "GlassStream / CONNECTED".
+     *
+     * Requires an active session. Attaches the display capability on demand, waits for
+     * [DisplayState.STARTED], then pushes a declarative view. If the display is already up, it just
+     * re-sends the content.
+     */
+    fun showConnectedOnDisplay() {
+        val current = session
+        if (current == null || !_uiState.value.isSessionActive) {
+            _uiState.update { it.copy(recentError = "Start a session first") }
+            return
+        }
+        val existing = display
+        if (existing != null) {
+            if (_uiState.value.displayState == DisplayState.STARTED) sendConnectedContent(existing)
+            return
+        }
+        current.addDisplay()
+            .onSuccess { attached ->
+                display = attached
+                _uiState.update { it.copy(isDisplayAttached = true) }
+                displayStateJob = viewModelScope.launch {
+                    attached.state.collect { state ->
+                        _uiState.update { it.copy(displayState = state) }
+                        if (state == DisplayState.STARTED) sendConnectedContent(attached)
+                    }
+                }
+            }
+            .onFailure { error, _ ->
+                Log.e(TAG, "Failed to attach display: ${error.description}")
+                _uiState.update { it.copy(recentError = error.description) }
+            }
+    }
+
+    private fun sendConnectedContent(target: Display) {
+        viewModelScope.launch {
+            target.sendContent {
+                flexBox(
+                    direction = Direction.COLUMN,
+                    gap = 8,
+                    padding = 24,
+                    background = FlexBoxBackground.CARD,
+                    alignment = Alignment.CENTER,
+                    crossAlignment = Alignment.CENTER,
+                ) {
+                    text("GlassStream", style = TextStyle.HEADING)
+                    text("CONNECTED", style = TextStyle.BODY, color = TextColor.SECONDARY)
+                }
+            }
+                .onSuccess { _uiState.update { it.copy(displayContentSent = true) } }
+                .onFailure { error, _ ->
+                    Log.e(TAG, "Failed to send display content: ${error.description}")
+                    _uiState.update { it.copy(recentError = error.description) }
+                }
+        }
+    }
+
+    /** Detach the display capability but keep the session. */
+    fun clearDisplay() {
+        session?.removeDisplay()
+        cleanupDisplay()
+    }
+
+    private fun cleanupDisplay() {
+        displayStateJob?.cancel()
+        displayStateJob = null
+        display = null
+        _uiState.update {
+            it.copy(isDisplayAttached = false, displayState = null, displayContentSent = false)
+        }
     }
 
     /**

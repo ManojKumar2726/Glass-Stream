@@ -765,7 +765,10 @@ Current state (updated 2026-09-22):
 [x] Camera        (photo capture + live video stream + on-screen HEVC preview)
 [x] Audio input   (glasses mic rides the camera stream; frames + live level meter)
 [x] Audio output  (TTS via Bluetooth A2DP → glasses speakers)
-[ ] Display       ← NEXT
+[x] Display       (addDisplay → sendContent "GlassStream / CONNECTED" card)
+
+>>> BIDIRECTIONAL I/O COMPLETE — the plan's first version of GlassStream (no AI).
+    NEXT: Stage 10 — add the ML model (needs a direction decision).
 ```
 
 The **next task is Stage 6 — Audio input**: prove that microphone audio from the
@@ -830,4 +833,16 @@ Follow-the-plan build, one capability at a time, each verified on real hardware
   session. UI also shows the detected Bluetooth output device. This sets up the later
   ML→text→TTS→speakers path.
 
-**Next:** Stage 8 — display output (show text on the Ray-Ban Display via mwdat-display).
+- **Stage 8 — Display output** ✅ (confirmed on device)
+  Real DAT capability (`mwdat-display`): `session.addDisplay()` → wait for
+  `DisplayState.STARTED` → `display.sendContent { flexBox { text("GlassStream");
+  text("CONNECTED") } }` (declarative view DSL). `session.removeDisplay()` detaches.
+  The card renders on the Ray-Ban Display.
+
+- **Stage 9 — Bidirectional I/O** ✅
+  All four channels proven on hardware: camera in + mic in (DAT stream), speakers out
+  (A2DP TTS) + display out (DAT display). This is the plan's first version of GlassStream
+  — the glasses work as both input and output device for the Android app, no AI.
+
+**Next:** Stage 10 — add the ML model. This is a direction decision (what the model does,
+on-device vs cloud, which framework), not just more wiring — to be scoped with the user.

@@ -5,6 +5,7 @@ import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.DeviceIdentifier
 import com.meta.wearable.dat.core.types.RegistrationState
+import com.meta.wearable.dat.display.types.DisplayState
 
 /**
  * Snapshot of the DAT connection state for the UI.
@@ -30,6 +31,10 @@ data class WearablesUiState(
     val audioFrameCount: Long = 0,
     val lastAudioInfo: String? = null,
     val audioLevel: Float = 0f, // peak amplitude of the last frame, 0..1
+    // Stage 8: display output on the Ray-Ban Display.
+    val isDisplayAttached: Boolean = false,
+    val displayState: DisplayState? = null,
+    val displayContentSent: Boolean = false,
     val recentError: String? = null,
 ) {
     val isRegistered: Boolean =
@@ -66,4 +71,7 @@ data class WearablesUiState(
     // Photo capture needs an attached stream (from addCamera), but not flowing video frames —
     // capturePhoto() works even while the firmware video-stream bug keeps frames at 0.
     val canCapturePhoto: Boolean = hasStream && !isCapturingPhoto
+
+    // Display output needs a connected session; the display capability attaches on demand.
+    val canUseDisplay: Boolean = isSessionActive
 }
