@@ -1,5 +1,17 @@
 # GlassStream — Project Plan
 
+> ## ✅ Project status: COMPLETE (2026-09-25)
+>
+> This repo was a **feature-proving / testing project** for the Meta Wearables Device
+> Access Toolkit. Its goal — reliable **bidirectional I/O** with the Ray-Ban Display
+> glasses — is fully achieved and verified on real hardware:
+> **camera in** (video stream + HEVC live preview + photo capture), **microphone in**
+> (rides the DAT camera stream), **speakers out** (TTS over Bluetooth A2DP), and
+> **display out** (DAT `mwdat-display`).
+>
+> Stages 1–9 are done. **Stage 10 (ML model) is intentionally NOT pursued here** — that
+> was always out of scope for this test repo. See the Progress Log (§18) for details.
+
 ## Project Goal
 
 I am an individual developer building **GlassStream** for Meta Ray-Ban Display glasses using the **Meta Wearables Device Access Toolkit (DAT) for Android**.
@@ -768,7 +780,7 @@ Current state (updated 2026-09-22):
 [x] Display       (addDisplay → sendContent "GlassStream / CONNECTED" card)
 
 >>> BIDIRECTIONAL I/O COMPLETE — the plan's first version of GlassStream (no AI).
-    NEXT: Stage 10 — add the ML model (needs a direction decision).
+    This test repo is DONE. Stage 10 (ML model) is intentionally not pursued here.
 ```
 
 The **next task is Stage 6 — Audio input**: prove that microphone audio from the
@@ -844,5 +856,8 @@ Follow-the-plan build, one capability at a time, each verified on real hardware
   (A2DP TTS) + display out (DAT display). This is the plan's first version of GlassStream
   — the glasses work as both input and output device for the Android app, no AI.
 
-**Next:** Stage 10 — add the ML model. This is a direction decision (what the model does,
-on-device vs cloud, which framework), not just more wiring — to be scoped with the user.
+**Stage 10 — ML model:** intentionally **not pursued** in this repo. GlassStream was a
+test project to prove the DAT input/output channels, and that goal is met. Adding a model
+(on-device or cloud) would be future work in a separate project built on this foundation.
+
+**Repo status: COMPLETE.**
